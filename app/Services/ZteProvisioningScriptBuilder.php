@@ -16,8 +16,7 @@ class ZteProvisioningScriptBuilder
         $onuId = (int) $data['onu_id'];
         $sn = strtoupper(self::cli((string) $data['serial_number']));
         $name = self::cli((string) $data['customer_name']);
-        // Nama onu-type ZTE peka huruf: `DualBand` ≠ `DUALBAND` (%Code 63904 Not support this ONU).
-        $onuType = self::cli((string) ($data['onu_type'] ?? 'ALL-ONT')) ?: 'ALL-ONT';
+        $onuType = strtoupper((string) ($data['onu_type'] ?? 'ALL-ONT'));
         $tcontProfile = (string) ($data['tcont_profile'] ?? 'SERVER');
         $vlan = (int) $data['vlan'];
         $serviceName = (string) ($data['service_name'] ?? 'ServiceName');
@@ -28,12 +27,7 @@ class ZteProvisioningScriptBuilder
         // menambah `switchport mode hybrid vport 1` + `service … type internet …`.
         $isBridge = strtolower((string) ($data['wan_mode'] ?? 'pppoe')) === 'bridge';
         $wanLine = $isBridge ? null : $this->wanLine($data, $name);
-        // Deskripsi dari form bila diisi; kosong = konvensi SmartOLT `{id}$$nama$$`
-        // (dibaca balik oleh SmartOltSupport::cleanCustomerName() bila `name` kosong).
-        $description = self::cli((string) ($data['description'] ?? ''));
-        if ($description === '') {
-            $description = "{$onuId}\$\${$name}\$\$";
-        }
+        $description = "{$onuId}\$\${$name}\$\$";
         $isC600 = (bool) ($data['is_c600'] ?? false);
         $oltIface = SmartOltSupport::gponOltInterface($slot, $port, $isC600);
         $onuIface = SmartOltSupport::onuInterfaceId($slot, $port, $onuId, $isC600);
@@ -51,9 +45,8 @@ class ZteProvisioningScriptBuilder
 
         $lines[] = "description {$description}";
 
-        $lines[] = "tcont 1 name 1 profile {$tcontProfile}";
-        $lines[] = 'gemport 1 name 1 tcont 1';
-        $lines[] = 'encrypt 1 enable downstream';
+        $lines[] = "tcont 1 name T-PPPOE profile {$tcontProfile}";
+        $lines[] = 'gemport 1 name G-PPPOE unicast tcont 1 dir both';
         if ($isBridge) {
             $lines[] = 'switchport mode hybrid vport 1';
         }
@@ -63,6 +56,7 @@ class ZteProvisioningScriptBuilder
 
         $lines[] = "pon-onu-mng {$onuIface}";
         $lines[] = $this->serviceLine($serviceName, $serviceMode, $vlan, $isBridge);
+	$lines[] = "vlan port veip_1 mode hybrid def-vlan {$vlan}";
         $lines = array_merge($lines, $this->tr069Lines($data));
         if (! $isBridge) {
             $lines[] = $wanLine;
